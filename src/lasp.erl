@@ -137,10 +137,10 @@ update(Id, Operation, Actor) ->
 %%
 -spec transaction([{id(), operation()}], actor()) -> {ok, var()} | {error, timeout}.
 transaction(Operations, Actor) ->
-	lasp_config:set(transaction, true),
-	lasp_state_based_synchronization_backend:transaction_buffer(Operations),
+	lasp_config:set(blocking_sync, true),
+	lasp_state_based_synchronization_backend:transaction_buffer(Operations, Actor).
     %lists:foreach(fun(E) -> {I, O} = E, update(I, O, Actor) end, Operations),
-	lasp_config:set(transaction, false).
+	%lasp_config:set(transaction, false).
 
 
 %% @doc Bind a dataflow variable to a value.

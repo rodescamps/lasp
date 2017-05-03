@@ -26,7 +26,7 @@
 -export([send/3,
          log_transmission/2]).
 
--export([transaction_mode/0,
+-export([blocking_sync_mode/0,
 		 broadcast_tree_mode/0,
          tutorial_mode/0,
          client_server_mode/0,
@@ -104,8 +104,8 @@ shuffle(L) ->
     [X || {_, X} <- lists:sort([{lasp_support:puniform(65535), N} || N <- L])].
 
 %% @private
-transaction_mode() ->
-    lasp_config:get(transaction, false).
+blocking_sync_mode() ->
+    lasp_config:get(blocking_sync, false).
 
 %% @private
 broadcast_tree_mode() ->

@@ -25,12 +25,12 @@
 -behaviour(lasp_synchronization_backend).
 
 %% API
--export([start_link/1]).
+-export([start_link/1,
+		 transaction_buffer/2]).
 
 %% gen_server callbacks
 -export([init/1,
          handle_call/3,
-		 transaction_buffer/1,
          handle_cast/2,
          handle_info/2,
          terminate/2,
@@ -70,6 +70,12 @@ start_link(Opts) ->
 
 blocking_sync(ObjectFilterFun) ->
     gen_server:call(?MODULE, {blocking_sync, ObjectFilterFun}, infinity).
+
+transaction_buffer(List, Actor) ->
+	{ok, Nodes} = ?SYNC_BACKEND:membership(),
+	lists:foreach(fun(E) -> {I, O} = E, lasp:update(I, O, Actor) end, List),
+	%lists:foreach(fun(Node) -> {List, Actor} end, Nodes).
+	lists:map(fun(Node) -> {Node, List, Actor} end, Nodes).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -142,11 +148,6 @@ handle_call({blocking_sync, ObjectFilterFun}, From,
             % lager:info("No peers, not blocking.", []),
             {reply, ok, State}
     end;
-
-transaction_buffer(List, Actor) ->
-	{ok, Nodes} = ?SYNC_BACKEND:membership(),
-	%lists:foreach(fun(E) -> {I, O} = E, update(I, O, Actor) end, Nodes)
-	lists:foreach(fun(Node) -> {List, Actor} end, Nodes).
 
 handle_call(Msg, _From, State) ->
     _ = lager:warning("Unhandled messages: ~p", [Msg]),
@@ -253,7 +254,7 @@ handle_info({state_sync, ObjectFilterFun},
     lists:foreach(SyncFun, Peers),
 
     %% Schedule next synchronization.
-    % schedule_state_synchronization(), %TODO?
+    schedule_state_synchronization(),
 
     {noreply, State};
 
@@ -298,7 +299,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% @private
 schedule_state_synchronization() ->
     ShouldSync = true
-			andalso (not ?SYNC_BACKEND:transaction_mode())
+			andalso (not ?SYNC_BACKEND:blocking_sync_mode())
             andalso (not ?SYNC_BACKEND:tutorial_mode())
             andalso (
               ?SYNC_BACKEND:peer_to_peer_mode()

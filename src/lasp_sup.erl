@@ -214,11 +214,6 @@ web_specs() ->
 
 %% @private
 configure_defaults() ->
-	TransactionDefault = list_to_atom(os:getenv("TRANSACTION", "false")),
-    Transaction = application:get_env(?APP, transaction, TransactionDefault),
-    lager:info("Setting transaction: ~p", [Transaction]),
-    lasp_config:set(transaction, Transaction),
-	
 	JitterDefault = list_to_atom(os:getenv("JITTER", "false")),
     Jitter = application:get_env(?APP, jitter, JitterDefault),
     lager:info("Setting jitter: ~p", [Jitter]),

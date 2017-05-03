@@ -42,3 +42,6 @@ bin/a
 dcos.pem
 logs/
 erl_crash.dump
+.project
+.settings/
+dump.rdb
