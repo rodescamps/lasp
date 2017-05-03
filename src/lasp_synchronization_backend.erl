@@ -26,7 +26,8 @@
 -export([send/3,
          log_transmission/2]).
 
--export([broadcast_tree_mode/0,
+-export([transaction_mode/0,
+		 broadcast_tree_mode/0,
          tutorial_mode/0,
          client_server_mode/0,
          peer_to_peer_mode/0,
@@ -101,6 +102,10 @@ select_random_sublist(List, K) ->
 %% @reference http://stackoverflow.com/questions/8817171/shuffling-elements-in-a-list-randomly-re-arrange-list-elements/8820501#8820501
 shuffle(L) ->
     [X || {_, X} <- lists:sort([{lasp_support:puniform(65535), N} || N <- L])].
+
+%% @private
+transaction_mode() ->
+    lasp_config:get(transaction, false).
 
 %% @private
 broadcast_tree_mode() ->

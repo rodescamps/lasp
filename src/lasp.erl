@@ -45,7 +45,8 @@
          intersection/3,
          fold/3,
          wait_needed/2,
-         thread/3]).
+         thread/3,
+		 transaction/2]).
 
 -export([invariant/3,
          enforce_once/3]).
@@ -127,6 +128,20 @@ declare(Id, Type) ->
 -spec update(id(), operation(), actor()) -> {ok, var()} | {error, timeout}.
 update(Id, Operation, Actor) ->
     do(update, [Id, Operation, Actor]).
+
+%% @doc Atomic transaction : apply a group of updates at the same time
+%%
+%%      Read the given all the `Id' and update them given the provided
+%%      `Operation's, which should be valid for the type of CRDT stored
+%%      at their corresponding `Id'.
+%%
+-spec transaction([{id(), operation()}], actor()) -> {ok, var()} | {error, timeout}.
+transaction(Operations, Actor) ->
+	lasp_config:set(transaction, true),
+	lasp_state_based_synchronization_backend:transaction_buffer(Operations),
+    %lists:foreach(fun(E) -> {I, O} = E, update(I, O, Actor) end, Operations),
+	lasp_config:set(transaction, false).
+
 
 %% @doc Bind a dataflow variable to a value.
 %%
@@ -233,7 +248,7 @@ thread(Module, Function, Args) ->
 %% @doc Pause execution until value requested with given threshold.
 %%
 %%      Pause execution of calling thread until a read operation is
-%%      issued for the given `Id'.  Used to introduce laziness into a
+%%      issued for the given `Id'. Used to introduce laziness into a
 %%      computation.
 %%
 -spec wait_needed(id(), threshold()) -> ok | {error, timeout}.
