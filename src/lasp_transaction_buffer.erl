@@ -6,7 +6,8 @@
 -export([new/0,
 		 get_pid/0,
 		 addToBuffer/2,
-		 deleteFromBuffer/2]).
+		 deleteFromBuffer/2,
+		 get/1]).
 -include("lasp.hrl").
 
 %% ====================================================================
@@ -21,7 +22,7 @@ get_pid() ->
     end.
 
 new() ->
-	{buffer,spawn(fun () -> loop({maps:new(), 1}) end)}.
+	spawn(fun () -> loop({maps:new(), 1}) end).
 
 % [Ensure atomicity and FIFO]
 % Size = Buffer size
@@ -32,7 +33,7 @@ loop({Buffer, Size}) ->
 			loop(case Msg
  		       of {add, Node, Op} -> {maps:put({Node, Size}, Op, Buffer), Size+1}
  		        ; {delete, {Node, N}} -> {maps:remove({Node, N}, Buffer), Size}
-				; {get} -> {Buffer, Size}
+				; get -> {Buffer, Size}
  		     end)
  	    end.
 
@@ -46,7 +47,10 @@ add(Buffer, Node, Op) ->
 
 deleteFromBuffer(Buffer, {Node, N}) ->
 	do(Buffer, {delete, {Node, N}}).
+
+get(Buffer) ->
+	do(Buffer, get).
  
-do({counter,Pid}, Msg) when is_pid(Pid) ->
+do(Pid, Msg) when is_pid(Pid) ->
 	Pid ! {Msg,self()},
  	receive {Pid,Result} -> Result end.

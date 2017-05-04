@@ -77,15 +77,24 @@ transaction_buffer(List, Actor) ->
 	Pid = lasp_transaction_buffer:get_pid(),
 	% Add all the operations in the buffer, to all of the nodes
 	lists:foreach(fun(E) -> {I, O} = E, lasp_transaction_buffer:addToBuffer(Pid, {I, O, Actor}) end, List),	
-	transaction_sync().
+	transaction_sync(1).
 
-transaction_sync() ->
+transaction_sync(SeqNumber) ->
 	% [Periodically, synchronize with peers]
 	% Get the buffers
-	{ok, {BufferFull, _}} = lasp_transaction_buffer:get(lasp_transaction_buffer:get_pid()),
+	BufferFull = lasp_transaction_buffer:get(lasp_transaction_buffer:get_pid()),
 	% Send the updates in transaction to all of the nodes
 	Keys = maps:keys(BufferFull),
-	lists:foreach(fun(K) -> {Node, N} = K, ?SYNC_BACKEND:send(?MODULE, {update, maps:get(K, BufferFull), node(), N}, Node) end, Keys).
+	lists:foreach(fun(K) -> {Node, N} = K,
+							case N of
+								% Send the next operation
+								SeqNumber ->
+									?SYNC_BACKEND:send(?MODULE, {update, maps:get(K, BufferFull), node(), N}, Node);
+								% We re-send the operations, check from the beginning,
+								% and continue until the operation to re-send is found
+								_ -> transaction_sync(SeqNumber+1)
+							end
+				  end, Keys).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -102,12 +111,16 @@ init([Store, Actor]) ->
         true ->
             case partisan_config:get(tag, undefined) of
                 server ->
-                    schedule_state_synchronization();
+					% [Disable the normal synchronization mechanism]
+                    % schedule_state_synchronization();
+					ok;
                 _ ->
                     ok
             end;
         false ->
-            schedule_state_synchronization()
+			% [Disable the normal synchronization mechanism]
+            % schedule_state_synchronization()
+			ok
     end,
 
     %% Schedule periodic plumtree refresh.
@@ -230,7 +243,8 @@ handle_cast(Msg, State) ->
 			lists:foreach(fun(E) -> {I, O, Actor} = E, lasp:update(I, O, Actor) end, List),
 			?SYNC_BACKEND:send(?MODULE, {acknowledge, node(), N}, From);
 		{acknowledge, From, N} ->
-			lasp_transaction_buffer:deleteFromBuffer(lasp_transaction_buffer:get_pid(), {From, N});
+			lasp_transaction_buffer:deleteFromBuffer(lasp_transaction_buffer:get_pid(), {From, N}),
+			transaction_sync(N+1);
 		_ ->
 			lager:warning("Unhandled messages: ~p", [Msg])
 	end,
@@ -300,7 +314,8 @@ handle_info(Msg, State) ->
 	% [Periodically, synchronize with peers]
 	case Msg of
 		transaction ->
-			transaction_sync(), schedule_state_synchronization();
+			% A message is lost at this point, re-send the operations to the peers
+			transaction_sync(1), schedule_state_synchronization();
     	_ ->
 			lager:warning("Unhandled messages: ~p", [Msg])
 	end,
