@@ -129,6 +129,7 @@ declare(Id, Type) ->
 update(Id, Operation, Actor) ->
     do(update, [Id, Operation, Actor]).
 
+% [Create a new API called name lasp:transaction()]
 %% @doc Atomic transaction : apply a group of updates at the same time
 %%
 %%      Read the given all the `Id' and update them given the provided
@@ -137,10 +138,7 @@ update(Id, Operation, Actor) ->
 %%
 -spec transaction([{id(), operation()}], actor()) -> {ok, var()} | {error, timeout}.
 transaction(Operations, Actor) ->
-	lasp_config:set(blocking_sync, true),
 	lasp_state_based_synchronization_backend:transaction_buffer(Operations, Actor).
-    %lists:foreach(fun(E) -> {I, O} = E, update(I, O, Actor) end, Operations),
-	%lasp_config:set(transaction, false).
 
 
 %% @doc Bind a dataflow variable to a value.

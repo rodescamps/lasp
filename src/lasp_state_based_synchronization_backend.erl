@@ -72,10 +72,20 @@ blocking_sync(ObjectFilterFun) ->
     gen_server:call(?MODULE, {blocking_sync, ObjectFilterFun}, infinity).
 
 transaction_buffer(List, Actor) ->
-	{ok, Nodes} = ?SYNC_BACKEND:membership(),
-	lists:foreach(fun(E) -> {I, O} = E, lasp:update(I, O, Actor) end, List),
-	%lists:foreach(fun(Node) -> {List, Actor} end, Nodes).
-	lists:map(fun(Node) -> {Node, List, Actor} end, Nodes).
+	% [When the API is called, buffer the updates]
+	% Buffers creation
+	Pid = lasp_transaction_buffer:get_pid(),
+	% Add all the operations in the buffer, to all of the nodes
+	lists:foreach(fun(E) -> {I, O} = E, lasp_transaction_buffer:addToBuffer(Pid, {I, O, Actor}) end, List),	
+	transaction_sync().
+
+transaction_sync() ->
+	% [Periodically, synchronize with peers]
+	% Get the buffers
+	{ok, {BufferFull, _}} = lasp_transaction_buffer:get(lasp_transaction_buffer:get_pid()),
+	% Send the updates in transaction to all of the nodes
+	Keys = maps:keys(BufferFull),
+	lists:foreach(fun(K) -> {Node, N} = K, ?SYNC_BACKEND:send(?MODULE, {update, maps:get(K, BufferFull), node(), N}, Node) end, Keys).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -214,7 +224,16 @@ handle_cast({state_send, From, {Id, Type, _Metadata, Value}, AckRequired},
     {noreply, State};
 
 handle_cast(Msg, State) ->
-    _ = lager:warning("Unhandled messages: ~p", [Msg]),
+	% [On receive, acknowledge them and apply them locally]
+	case Msg of
+		{update, List, From, N} ->
+			lists:foreach(fun(E) -> {I, O, Actor} = E, lasp:update(I, O, Actor) end, List),
+			?SYNC_BACKEND:send(?MODULE, {acknowledge, node(), N}, From);
+		{acknowledge, From, N} ->
+			lasp_transaction_buffer:deleteFromBuffer(lasp_transaction_buffer:get_pid(), {From, N});
+		_ ->
+			lager:warning("Unhandled messages: ~p", [Msg])
+	end,
     {noreply, State}.
 
 %% @private
@@ -278,7 +297,13 @@ handle_info(plumtree_peer_refresh, State) ->
     {noreply, State#state{gossip_peers=GossipPeers}};
 
 handle_info(Msg, State) ->
-    _ = lager:warning("Unhandled messages: ~p", [Msg]),
+	% [Periodically, synchronize with peers]
+	case Msg of
+		transaction ->
+			transaction_sync(), schedule_state_synchronization();
+    	_ ->
+			lager:warning("Unhandled messages: ~p", [Msg])
+	end,
     {noreply, State}.
 
 %% @private
@@ -298,8 +323,14 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 schedule_state_synchronization() ->
-    ShouldSync = true
-			andalso (not ?SYNC_BACKEND:blocking_sync_mode())
+	
+	% [Periodically, synchronize with peers]
+	% Every (10000), re-send the transaction to the cluster
+	ObjectFilterFun = fun(_) -> true end,
+	timer:send_after(10000, {transaction, ObjectFilterFun}),
+
+	% [Disable the normal synchronization mechanism]
+    ShouldSync = false % Synchronization disabled in order to implement transactions
             andalso (not ?SYNC_BACKEND:tutorial_mode())
             andalso (
               ?SYNC_BACKEND:peer_to_peer_mode()
@@ -314,7 +345,6 @@ schedule_state_synchronization() ->
     case ShouldSync of
         true ->
             Interval = lasp_config:get(state_interval, 10000),
-            ObjectFilterFun = fun(_) -> true end,
             case lasp_config:get(jitter, false) of
                 true ->
                     %% Add random jitter.
